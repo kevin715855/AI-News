@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-validate-localized = "validator.cli:main"
+validate-localized = "validator.cli:validate_localized_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

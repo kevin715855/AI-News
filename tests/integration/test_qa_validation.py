@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from validator.cli import main
+from validator.cli import main, validate_localized_main
 from validator.workflow import QAValidationFailed, QAValidator
 
 
@@ -32,6 +32,20 @@ def test_cli_reports_pass_per_rule(tmp_path: Path, capsys: pytest.CaptureFixture
     assert "PASS markdown-structure" in output
     assert "PASS heading-hierarchy" in output
     assert "PASS link-integrity" in output
+    assert str(readme) in output
+
+
+def test_console_script_entry_validates_without_subcommand(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    readme = tmp_path / "README.vi.md"
+    readme.write_text(VALID_README, encoding="utf-8")
+
+    exit_code = validate_localized_main([str(readme)])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "PASS markdown-structure" in output
     assert str(readme) in output
 
 

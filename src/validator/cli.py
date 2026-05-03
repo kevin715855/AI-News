@@ -32,6 +32,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    if argv and argv[0] != "validate-localized":
+        return _validate_localized_entry(argv)
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -40,6 +43,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     parser.error(f"Unknown command: {args.command}")
     return 1
+
+
+def validate_localized_main(argv: Sequence[str] | None = None) -> int:
+    return _validate_localized_entry(argv)
+
+
+def _validate_localized_entry(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="validate-localized")
+    parser.add_argument("readme_path", type=Path)
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Treat warnings as CI failures.",
+    )
+    parser.add_argument(
+        "--rules",
+        help="Comma-separated rule names to run.",
+    )
+    args = parser.parse_args(argv)
+    return _validate_localized(args.readme_path, args.strict, args.rules)
 
 
 def _validate_localized(readme_path: Path, strict: bool, rules: str | None) -> int:

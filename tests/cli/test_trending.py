@@ -90,6 +90,30 @@ def test_parse_trending_html_extracts_repository_metadata() -> None:
     ]
 
 
+def test_parse_trending_html_handles_nested_repository_name_spans() -> None:
+    html = """
+    <article class="Box-row">
+      <h2 class="h3 lh-condensed">
+        <a href="/TauricResearch/TradingAgents">
+          <span>TauricResearch</span>
+          /
+          <span>TradingAgents</span>
+        </a>
+      </h2>
+    </article>
+    """
+
+    repositories = parse_trending_html(html)
+
+    assert repositories == [
+        TrendingRepository(
+            owner="TauricResearch",
+            name="TradingAgents",
+            url="https://github.com/TauricResearch/TradingAgents",
+        )
+    ]
+
+
 def test_fetch_command_passes_options_writes_cache_and_prints_table(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

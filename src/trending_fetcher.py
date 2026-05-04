@@ -97,6 +97,7 @@ class _TrendingHTMLParser(HTMLParser):
         self._current: dict[str, object] | None = None
         self._article_depth = 0
         self._capture: str | None = None
+        self._capture_tag: str | None = None
         self._text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -114,18 +115,18 @@ class _TrendingHTMLParser(HTMLParser):
         self._article_depth += 1
 
         if tag == "a" and self._is_repository_href(attr_map.get("href", "")):
-            self._start_capture("repository")
+            self._start_capture("repository", tag)
             self._current["href"] = attr_map["href"]
         elif tag == "p" and "col-9" in class_name:
-            self._start_capture("description")
+            self._start_capture("description", tag)
         elif tag == "span" and attr_map.get("itemprop") == "programmingLanguage":
-            self._start_capture("language")
+            self._start_capture("language", tag)
         elif tag == "a" and attr_map.get("href", "").endswith("/stargazers"):
-            self._start_capture("stars")
+            self._start_capture("stars", tag)
         elif tag == "a" and attr_map.get("href", "").endswith("/forks"):
-            self._start_capture("forks")
+            self._start_capture("forks", tag)
         elif tag == "span" and "float-sm-right" in class_name:
-            self._start_capture("stars_in_period")
+            self._start_capture("stars_in_period", tag)
 
     def handle_data(self, data: str) -> None:
         if self._capture:
@@ -135,7 +136,7 @@ class _TrendingHTMLParser(HTMLParser):
         if self._current is None:
             return
 
-        if self._capture and tag in {"a", "p", "span"}:
+        if self._capture and tag == self._capture_tag:
             self._finish_capture()
 
         if tag == "article":
@@ -146,9 +147,10 @@ class _TrendingHTMLParser(HTMLParser):
 
         self._article_depth = max(0, self._article_depth - 1)
 
-    def _start_capture(self, field: str) -> None:
+    def _start_capture(self, field: str, tag: str) -> None:
         if self._capture is None:
             self._capture = field
+            self._capture_tag = tag
             self._text = []
 
     def _finish_capture(self) -> None:
@@ -158,6 +160,7 @@ class _TrendingHTMLParser(HTMLParser):
         if value and self._capture not in self._current:
             self._current[self._capture] = value
         self._capture = None
+        self._capture_tag = None
         self._text = []
 
     def _finish_repository(self) -> None:

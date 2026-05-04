@@ -1,0 +1,40 @@
+# {{ data.repo_name }}
+
+{% if data.repo_url -%}
+Repository: {{ data.repo_url }}
+{% endif %}
+{% if data.description -%}
+
+{{ data.description }}
+{% endif %}
+
+## Tom tat tieng Viet
+
+{{ data.summary or "Chua co tom tat." }}
+
+## Metadata
+
+| Field | Value |
+| --- | --- |
+{% for key, value in metadata_items -%}
+| {{ key }} | {{ value if value is not none else "" }} |
+{% else -%}
+| status | No metadata provided |
+{% endfor %}
+
+{% if include_readme and data.readme_content %}
+## README da ban dia hoa
+
+## README da Viet hoa
+
+{{ data.readme_content }}
+{% endif %}
+
+{% if data.source_files %}
+## Source files
+
+{% for source_file in data.source_files -%}
+- {{ source_file }}
+- `{{ source_file }}`
+{% endfor %}
+{% endif %}

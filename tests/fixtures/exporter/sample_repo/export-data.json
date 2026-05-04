@@ -1,0 +1,17 @@
+{
+  "repo_name": "ai-news-vietnam",
+  "repo_url": "https://github.com/example/ai-news-vietnam",
+  "summary": "Kho lưu trữ này tổng hợp tin tức AI mới nhất và tạo bản tóm tắt tiếng Việt rõ ràng cho người đọc kỹ thuật.",
+  "readme_content": "# AI News Việt Nam\n\nDự án cung cấp bản tin AI hằng ngày bằng tiếng Việt.\n\n## Cài đặt\n\n```bash\npip install ai-news-vietnam\n```",
+  "metadata": {
+    "description": "Vietnamese AI news digest",
+    "stars": 1280,
+    "forks": 74,
+    "language": "Python",
+    "updated_at": "2026-05-01T10:30:00Z"
+  },
+  "source_files": [
+    "README.md",
+    "src/digest.py"
+  ]
+}

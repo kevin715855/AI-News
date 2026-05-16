@@ -61,6 +61,14 @@ def test_heading_hierarchy_detects_skipped_levels() -> None:
     assert "h1 to h3" in result.errors[0]
 
 
+def test_heading_hierarchy_ignores_code_fence_comments() -> None:
+    result = HeadingHierarchyRule().validate(
+        "# Title\n\n```bash\n# comment\n```\n\n## Details\n"
+    )
+
+    assert result.is_valid
+
+
 def test_rules_integrate_with_validator_runner_source_content() -> None:
     source = "# Title\n\n```bash\necho ok\n```\n[Docs](https://example.com/docs)"
     localized = "# Tieu de\n### Bo qua\n```bash\necho changed\n```\n[Docs](https://other.example.com)"

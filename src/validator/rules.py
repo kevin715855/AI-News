@@ -90,7 +90,13 @@ class HeadingHierarchyRule(ValidationRule):
     ) -> ValidationResult:
         result = ValidationResult.valid()
         previous_level = 0
+        in_fence = False
         for line_number, line in enumerate(content.splitlines(), start=1):
+            if line.lstrip().startswith(("```", "~~~")):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
             match = re.match(r"^(#{1,6})\s+\S", line)
             if not match:
                 continue

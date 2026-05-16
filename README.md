@@ -6,6 +6,10 @@ local repository content, extracts README/docs, generates summaries, localizes
 README content, validates Markdown and Vietnamese quality, and exports results
 as Markdown or JSON.
 
+The production workflow now also supports one-off GitHub repository URLs and
+can call a local LM Studio model through its OpenAI-compatible API to generate
+reader-facing Vietnamese digests.
+
 ## Current Scope
 
 - Fetch GitHub Trending repositories and cache/list the results.
@@ -52,9 +56,8 @@ python -m cli.main --help
 Examples:
 
 ```bash
-python -m cli.trending fetch --language python --period daily --limit 10
-python -m cli.trending list
-python -m cli.export export json path/to/repo --output outputs/digest.json
+github-trending-vi-digest --model qwen2.5-coder run
+github-trending-vi-digest --model qwen2.5-coder repo https://github.com/owner/repo
 python -m validator.cli validate-localized localized/README.vi.md
 ```
 

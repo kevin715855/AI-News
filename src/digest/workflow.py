@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
+from .ai import AIProvider, AIProviderError
+from .editorial import EditorialDigest, EditorialDigestGenerator
 from validator.workflow import QAValidator
 
 
@@ -58,6 +60,7 @@ class RepoDigest:
     localized_readme_path: str | None = None
     validation_report: str | None = None
     validation_exit_code: int | None = None
+    markdown_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -100,12 +103,16 @@ class DigestWorkflow:
         self,
         options: WorkflowOptions,
         trending_client: GitHubTrendingClient | None = None,
+        ai_provider: AIProvider | None = None,
         progress: ProgressReporter | None = None,
     ) -> None:
         self.options = options
         self.trending_client = trending_client or GitHubTrendingClient()
         self.progress = progress or (lambda message: None)
         self.validator = QAValidator(strict=options.strict_validation)
+        self.editorial_generator = (
+            EditorialDigestGenerator(ai_provider) if ai_provider is not None else None
+        )
 
     @property
     def output_dir(self) -> Path:
@@ -130,6 +137,11 @@ class DigestWorkflow:
         self.clone_repositories(repos)
         analyses = self.analyze_repositories(repos)
         digests = [RepoDigest(repo=analysis.repo) for analysis in analyses]
+
+        if self.editorial_generator is not None:
+            digests = self.generate_markdown_outputs(analyses, digests)
+            self._write_json("digests.json", [_digest_to_dict(digest) for digest in digests])
+            return digests
 
         if self.options.mode in {"summarize", "both"}:
             digests = self.generate_summaries(analyses, digests)
@@ -157,6 +169,15 @@ class DigestWorkflow:
         self._write_json("repos.json", [_repo_to_dict(repo) for repo in selected])
         self.progress(f"Fetched {len(selected)} repositories.")
         return selected
+
+    def prepare_repository_url(self, url: str) -> list[TrendingRepo]:
+        """Create saved state for one manually supplied GitHub repository URL."""
+
+        self._ensure_dirs()
+        owner, name = _parse_github_url(url)
+        repo = TrendingRepo(owner=owner, name=name, url=_normalized_git_url(url))
+        self._write_json("repos.json", [_repo_to_dict(repo)])
+        return [repo]
 
     def clone_repositories(self, repos: Sequence[TrendingRepo] | None = None) -> list[Path]:
         self._ensure_dirs()
@@ -269,6 +290,37 @@ class DigestWorkflow:
                 raise WorkflowError(report.format())
         self._write_json("digests.json", [_digest_to_dict(digest) for digest in digests])
         return digests
+
+    def generate_markdown_outputs(
+        self,
+        analyses: Sequence[RepoAnalysis] | None = None,
+        digests: Sequence[RepoDigest] | None = None,
+    ) -> list[RepoDigest]:
+        if self.editorial_generator is None:
+            raise WorkflowError("AI provider is required to generate editorial Markdown output.")
+        analyses = list(analyses or self.load_analyses())
+        by_slug = _digest_map(digests or self._load_digests_if_exists())
+        for analysis in analyses:
+            if analysis.readme_path is None:
+                raise WorkflowError(f"Cannot generate digest without README: {analysis.repo.slug}")
+            source_path = self.output_dir / analysis.readme_path
+            source = source_path.read_text(encoding="utf-8", errors="replace")
+            try:
+                editorial = self.editorial_generator.generate(analysis.repo.slug, source)
+            except AIProviderError as exc:
+                raise WorkflowError(str(exc)) from exc
+            markdown = _repair_heading_hierarchy(
+                _render_editorial_markdown(analysis, editorial)
+            )
+            destination = self.artifact_dir / analysis.repo.safe_name / "DIGEST.vi.md"
+            self.validator.assert_valid_content(markdown, destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(markdown, encoding="utf-8")
+            digest = by_slug.setdefault(analysis.repo.slug, RepoDigest(repo=analysis.repo))
+            digest.markdown_path = str(destination.relative_to(self.output_dir))
+        results = [by_slug[analysis.repo.slug] for analysis in analyses]
+        self._write_json("digests.json", [_digest_to_dict(digest) for digest in results])
+        return results
 
     def load_repositories(self) -> list[TrendingRepo]:
         return [_repo_from_dict(item) for item in self._read_json("repos.json")]
@@ -403,6 +455,30 @@ def _render_localized_readme(analysis: RepoAnalysis, source: str) -> str:
     )
 
 
+def _render_editorial_markdown(analysis: RepoAnalysis, editorial: EditorialDigest) -> str:
+    lines = [
+        f"# {analysis.repo.slug}",
+        "",
+        editorial.summary,
+        "",
+        "## Điều đáng chú ý",
+        "",
+        *[f"- {item}" for item in editorial.highlights],
+        "",
+        "## Vì sao repo này đáng để mở",
+        "",
+        editorial.why_it_matters,
+        "",
+        "---",
+        "",
+        "## README tiếng Việt",
+        "",
+        _normalize_nested_headings(editorial.localized_readme).rstrip(),
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def _relative_or_none(path: Path | None, base: Path) -> str | None:
     return str(path.relative_to(base)) if path else None
 
@@ -453,4 +529,63 @@ def _digest_from_dict(payload: dict[str, object]) -> RepoDigest:
         localized_readme_path=payload.get("localized_readme_path"),  # type: ignore[arg-type]
         validation_report=payload.get("validation_report"),  # type: ignore[arg-type]
         validation_exit_code=payload.get("validation_exit_code"),  # type: ignore[arg-type]
+        markdown_path=payload.get("markdown_path"),  # type: ignore[arg-type]
     )
+
+
+def _parse_github_url(url: str) -> tuple[str, str]:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.netloc.lower() != "github.com":
+        raise WorkflowError("Only GitHub repository URLs are supported.")
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2:
+        raise WorkflowError("GitHub repository URL must include owner and repository name.")
+    owner, name = parts[0], parts[1].removesuffix(".git")
+    return owner, name
+
+
+def _normalized_git_url(url: str) -> str:
+    owner, name = _parse_github_url(url)
+    return f"https://github.com/{owner}/{name}.git"
+
+
+def _normalize_nested_headings(markdown: str) -> str:
+    normalized = []
+    in_fence = False
+    for line in markdown.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            normalized.append(line)
+            continue
+        if not in_fence:
+            match = re.match(r"^(#{1,6})\s+(.*)$", line)
+            if match:
+                level = max(3, len(match.group(1)))
+                normalized.append(f"{'#' * level} {match.group(2)}")
+                continue
+        normalized.append(line)
+    return "\n".join(normalized)
+
+
+def _repair_heading_hierarchy(markdown: str) -> str:
+    repaired = []
+    previous_level = 0
+    in_fence = False
+    for line in markdown.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            repaired.append(line)
+            continue
+        if not in_fence:
+            match = re.match(r"^(#{1,6})\s+(.*)$", line)
+            if match:
+                level = len(match.group(1))
+                if previous_level and level > previous_level + 1:
+                    level = previous_level + 1
+                previous_level = level
+                repaired.append(f"{'#' * level} {match.group(2)}")
+                continue
+        repaired.append(line)
+    return "\n".join(repaired)
